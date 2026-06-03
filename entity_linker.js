@@ -57,3 +57,4 @@ async function auditProjectMetrics() {
 }
 
 auditProjectMetrics();
+module.exports = { TelemetryEngine };
