@@ -6,13 +6,15 @@ console.log("[START] LUMINANODE AI ORCHESTRATION PIPELINE ACTIVE");
 console.log("=================================================================\n");
 
 const fs = require('fs');
+const { AlertNotifier } = require('./notifier.js');
 
 class AIOrchestrator {
     constructor(logFile) {
         this.logFile = logFile;
+        this.notifier = new AlertNotifier();
     }
 
-    evaluateRiskProfile() {
+    async evaluateRiskProfile() {
         try {
             if (!fs.existsSync(this.logFile)) {
                 console.log("[!] No localized transaction telemetry found to ingest.");
@@ -24,14 +26,12 @@ class AIOrchestrator {
 
             console.log(`[Ingestion] Successfully ingested ${transactions.length} telemetry streams for analysis.\n`);
 
-            transactions.forEach((tx) => {
+            for (const tx of transactions) {
                 let riskScore = 0;
                 let riskFactors = [];
 
-                // Clean the asset numerical string value for validation
                 const numericalValue = parseFloat(tx.value.replace(/,/g, ''));
 
-                // Rule-based evaluation heuristics
                 if (numericalValue >= 1000) {
                     riskScore += 50;
                     riskFactors.push("High-Volume Liquidity Spike (>= 1000 Assets)");
@@ -40,12 +40,11 @@ class AIOrchestrator {
                     riskFactors.push("Moderate-Whale Velocity Shift (>= 500 Assets)");
                 }
 
-                if (tx.to.toLowerCase().includes("exchange") || tx.from.toLowerCase().includes("exchange")) {
+                if (tx.to?.toLowerCase().includes("exchange") || tx.from?.toLowerCase().includes("exchange")) {
                     riskScore += 25;
                     riskFactors.push("CEX Interactivity (Potential Off-Ramp Vector)");
                 }
 
-                // Final risk tiering allocation
                 let riskTier = "LOW";
                 if (riskScore >= 70) riskTier = "CRITICAL RISK";
                 else if (riskScore >= 40) riskTier = "ELEVATED RISK";
@@ -53,11 +52,20 @@ class AIOrchestrator {
                 console.log(`[Audit Mapping] Evaluating Tx: ${tx.hash}`);
                 console.log(` -> Detected Value : ${tx.value}`);
                 console.log(` -> Risk Score     : ${riskScore}/100 [Tier: ${riskTier}]`);
-                if (riskFactors.length > 0) {
-                    console.log(` -> Risk Factors   : ${riskFactors.join(" | ")}`);
+                
+                const auditReport = {
+                    hash: tx.hash,
+                    value: tx.value,
+                    score: riskScore,
+                    tier: riskTier,
+                    factors: riskFactors
+                };
+
+                if (riskTier !== "LOW") {
+                    await this.notifier.dispatchRiskAlert(auditReport);
                 }
                 console.log("-----------------------------------------------------------------");
-            });
+            }
 
         } catch (err) {
             console.error(`[AI Error] Critical pipeline execution failure: ${err.message}`);
@@ -65,6 +73,5 @@ class AIOrchestrator {
     }
 }
 
-// Instantiate and process the existing telemetry database
 const auditor = new AIOrchestrator('alerts.json');
 auditor.evaluateRiskProfile();
